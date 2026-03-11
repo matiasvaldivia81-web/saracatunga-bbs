@@ -16,8 +16,8 @@ const initSqlJs = require('sql.js');
 const app = express();
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'saracatunga_secret_mv_2024';
-// En Render el disco persistente está en /data, localmente usa el directorio actual
-const DB_DIR = process.env.RENDER ? '/data' : __dirname;
+// Usar /data si existe (Render con disco), sino usar directorio actual
+const DB_DIR = fs.existsSync('/data') ? '/data' : __dirname;
 const DB_PATH = path.join(DB_DIR, 'saracatunga.db');
 
 app.use(helmet({ contentSecurityPolicy: false }));
