@@ -24,8 +24,10 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: '*', credentials: true }));
 app.use(express.json());
 
-// Servir frontend desde /public
-const publicPath = path.join(__dirname, 'public');
+// Servir frontend - busca index.html en /public o en la raíz
+const publicPath = fs.existsSync(path.join(__dirname, 'public'))
+  ? path.join(__dirname, 'public')
+  : __dirname;
 app.use(express.static(publicPath));
 
 // ═══════════════════════════════════════════════
@@ -513,7 +515,10 @@ app.get('/api/my-votes', authMiddleware, (req, res) => {
 // SERVE FRONTEND
 // ═══════════════════════════════════════════════
 app.get('/{*path}', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  const indexPath = fs.existsSync(path.join(__dirname, 'public', 'index.html'))
+    ? path.join(__dirname, 'public', 'index.html')
+    : path.join(__dirname, 'index.html');
+  res.sendFile(indexPath);
 });
 
 // ═══════════════════════════════════════════════
