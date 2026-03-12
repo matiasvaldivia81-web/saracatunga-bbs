@@ -70,6 +70,7 @@ async function initDB() {
       votes INTEGER DEFAULT 0,
       pinned INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
+      last_activity_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (author_id) REFERENCES users(id)
     );
 
@@ -98,6 +99,9 @@ async function initDB() {
       target_user_id INTEGER NOT NULL,
       reason TEXT NOT NULL,
       detail TEXT,
+      status TEXT DEFAULT 'pendiente',
+      resolved_by INTEGER,
+      resolved_at TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
   `);
@@ -125,6 +129,29 @@ async function initDB() {
     seedData();
   }
 
+  // Migración: agregar last_activity_at si no existe (DBs viejas)
+  try {
+    db.run(`ALTER TABLE topics ADD COLUMN last_activity_at TEXT DEFAULT (datetime('now'))`);
+    // Inicializar con created_at para temas existentes
+    db.run(`UPDATE topics SET last_activity_at = created_at WHERE last_activity_at IS NULL`);
+    console.log('✔ Migración: last_activity_at agregado');
+  } catch(e) { /* columna ya existe, ok */ }
+
+  // Migración: agregar status/resolved a reports
+  try {
+    db.run(`ALTER TABLE reports ADD COLUMN status TEXT DEFAULT 'pendiente'`);
+    db.run(`ALTER TABLE reports ADD COLUMN resolved_by INTEGER`);
+    db.run(`ALTER TABLE reports ADD COLUMN resolved_at TEXT`);
+    console.log('✔ Migración: reports status agregado');
+  } catch(e) { /* columnas ya existen, ok */ }
+
+  // Migración: corregir título del tema de bienvenida si tiene "BBS"
+  try {
+    db.run(`UPDATE topics SET title='Bienvenidos a SARACATUNGA — Leé esto antes de arrancar',
+      body='Este es el foro donde los humanos debaten sin algoritmos, sin IA, sin filtros.\n\nOpiniones reales de personas reales. Sin burbujas, sin que nadie te diga qué pensar.\n\nReglas básicas:\n— Argumentá con datos, no con insultos\n— El desacuerdo es bienvenido, el acoso no\n— Cada usuario empieza con ★★★. Las denuncias aceptadas quitan estrellas\n— A 0★ la cuenta queda bloqueada\n\nSi tenés algo para decir, este es el lugar.'
+      WHERE title LIKE '%BBS%' AND pinned=1`);
+  } catch(e) { /* ok */ }
+
   saveDB();
 }
 
@@ -145,8 +172,8 @@ function seedData() {
 
   // Tema fijado de bienvenida
   db.run(`INSERT INTO topics (title, body, category, author_id, pinned) VALUES (?, ?, ?, 1, 1)`, [
-    'Bienvenidos a SARACATUNGA BBS — Leé esto primero',
-    'Este es el foro donde los humanos debaten sin algoritmos, sin IA, sin filtros. Opiniones reales de personas reales.\n\nReglas básicas: argumentá, no insultes, citá fuentes cuando puedas. El sistema de estrellas penaliza el mal comportamiento.\n\nBienvenido al debate libre.',
+    'Bienvenidos a SARACATUNGA — Leé esto antes de arrancar',
+    'Este es el foro donde los humanos debaten sin algoritmos, sin IA, sin filtros.\n\nOpiniones reales de personas reales. Sin burbujas, sin que nadie te diga qué pensar.\n\nReglas básicas:\n— Argumentá con datos, no con insultos\n— El desacuerdo es bienvenido, el acoso no\n— Cada usuario empieza con ★★★. Las denuncias aceptadas quitan estrellas\n— A 0★ la cuenta queda bloqueada\n\nSi tenés algo para decir, este es el lugar.',
     'General'
   ]);
 
@@ -381,7 +408,13 @@ app.get('/api/topics', (req, res) => {
   const { cat, q } = req.query;
   let sql = `
     SELECT t.*, u.username as author_name, u.role as author_role, u.stars as author_stars, u.blocked as author_blocked,
-           COUNT(DISTINCT c.id) as comment_count
+           COUNT(DISTINCT c.id) as comment_count,
+           t.last_activity_at,
+           -- Score: votos x3 + comentarios x2 + boost por actividad reciente
+           -- Horas desde última actividad (mínimo 0.5 para evitar division por cero)
+           (t.votes * 3.0 + COUNT(DISTINCT c.id) * 2.0 +
+            20.0 / (MAX(0.5, CAST((julianday('now') - julianday(COALESCE(t.last_activity_at, t.created_at))) * 24 AS REAL)) + 1)
+           ) as activity_score
     FROM topics t
     JOIN users u ON t.author_id = u.id
     LEFT JOIN comments c ON c.topic_id = t.id
@@ -390,7 +423,8 @@ app.get('/api/topics', (req, res) => {
   const params = [];
   if (cat) { sql += ' AND t.category = ?'; params.push(cat); }
   if (q) { sql += ' AND (t.title LIKE ? OR t.body LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
-  sql += ' GROUP BY t.id ORDER BY t.pinned DESC, t.created_at DESC';
+  // Fijados siempre arriba, luego por score de actividad
+  sql += ' GROUP BY t.id ORDER BY t.pinned DESC, activity_score DESC';
   res.json(query(sql, params));
 });
 
@@ -410,7 +444,7 @@ app.post('/api/topics', authMiddleware, (req, res) => {
   if (!title || !body || !category) return res.status(400).json({ error: 'Campos incompletos' });
   if (title.length < 15) return res.status(400).json({ error: 'Título mínimo 15 caracteres' });
   if (body.length < 30) return res.status(400).json({ error: 'Cuerpo mínimo 30 caracteres' });
-  const validCats = ['General','Politica','Tecnologia','Cultura','Ciencia','Deporte','Humor','Off-Topic'];
+  const validCats = ['General','Politica','Tecnologia','Cultura','Ciencia','Deporte','Humor','Off-Topic','Varios'];
   if (!validCats.includes(category)) return res.status(400).json({ error: 'Categoría inválida' });
 
   const id = run('INSERT INTO topics (title, body, category, author_id) VALUES (?, ?, ?, ?)',
@@ -454,7 +488,7 @@ app.post('/api/topics/:id/vote', authMiddleware, (req, res) => {
     return res.json({ voted: false });
   }
   run('INSERT INTO votes (user_id, target_type, target_id) VALUES (?,?,?)', [uid,'topic',tid]);
-  run('UPDATE topics SET votes = votes + 1 WHERE id = ?', [tid]);
+  run('UPDATE topics SET votes = votes + 1, last_activity_at = datetime(\'now\') WHERE id = ?', [tid]);
   saveDB();
   res.json({ voted: true });
 });
@@ -483,6 +517,8 @@ app.post('/api/topics/:id/comments', authMiddleware, (req, res) => {
   const id = run('INSERT INTO comments (topic_id, author_id, body) VALUES (?, ?, ?)',
     [req.params.id, user.id, body.trim()]);
   run('UPDATE users SET posts_count = posts_count + 1 WHERE id = ?', [user.id]);
+  // Bump de actividad: el tema sube en el ranking
+  run(`UPDATE topics SET last_activity_at = datetime('now') WHERE id = ?`, [req.params.id]);
   saveDB();
   const cmt = query('SELECT c.*, u.username as author_name, u.role as author_role, u.stars as author_stars FROM comments c JOIN users u ON c.author_id=u.id WHERE c.id=?', [id])[0];
   res.status(201).json(cmt);
@@ -522,51 +558,186 @@ app.post('/api/reports', authMiddleware, (req, res) => {
   const { target_user_id, reason, detail } = req.body;
   if (req.user.id === target_user_id) return res.status(400).json({ error: 'No podés denunciarte a vos mismo' });
   
-  const dup = query('SELECT id FROM reports WHERE reporter_id=? AND target_user_id=? AND reason=?',
-    [req.user.id, target_user_id, reason]);
-  if (dup.length) return res.status(409).json({ error: 'Ya denunciaste a este usuario por este motivo' });
+  const dup = query('SELECT id FROM reports WHERE reporter_id=? AND target_user_id=? AND reason=? AND status=?',
+    [req.user.id, target_user_id, reason, 'pendiente']);
+  if (dup.length) return res.status(409).json({ error: 'Ya tenés una denuncia pendiente contra este usuario por este motivo' });
 
-  run('INSERT INTO reports (reporter_id, target_user_id, reason, detail) VALUES (?,?,?,?)',
-    [req.user.id, target_user_id, reason, detail || '']);
-
-  // Quitar estrella
   const target = query('SELECT * FROM users WHERE id = ?', [target_user_id])[0];
   if (!target) return res.status(404).json({ error: 'Usuario no encontrado' });
-  
-  const newStars = Math.max(0, target.stars - 1);
-  const blocked = newStars === 0 ? 1 : 0;
-  run('UPDATE users SET stars = ?, blocked = ? WHERE id = ?', [newStars, blocked, target_user_id]);
+
+  // Denuncia queda PENDIENTE — el admin la valida antes de aplicar sanción
+  run('INSERT INTO reports (reporter_id, target_user_id, reason, detail, status) VALUES (?,?,?,?,?)',
+    [req.user.id, target_user_id, reason, detail || '', 'pendiente']);
   saveDB();
 
   res.json({ 
-    success: true, 
-    stars: newStars, 
-    blocked: !!blocked,
-    message: blocked ? `${target.username} bloqueado por 0 estrellas` : `★ quitada a ${target.username}`
+    success: true,
+    message: `Denuncia enviada contra ${target.username}. El moderador la revisará.`
   });
 });
 
+// Aprobar denuncia (mod aplica la sanción)
+app.post('/api/reports/:id/approve', authMiddleware, modMiddleware, (req, res) => {
+  const report = query('SELECT * FROM reports WHERE id = ?', [req.params.id])[0];
+  if (!report) return res.status(404).json({ error: 'Denuncia no encontrada' });
+  if (report.status !== 'pendiente') return res.status(400).json({ error: 'Denuncia ya procesada' });
+
+  const target = query('SELECT * FROM users WHERE id = ?', [report.target_user_id])[0];
+  if (!target) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+  const newStars = Math.max(0, target.stars - 1);
+  const blocked = newStars === 0 ? 1 : 0;
+  run('UPDATE users SET stars = ?, blocked = ? WHERE id = ?', [newStars, blocked, target.id]);
+  run(`UPDATE reports SET status='aprobada', resolved_by=?, resolved_at=datetime('now') WHERE id=?`,
+    [req.user.id, report.id]);
+  saveDB();
+
+  res.json({ success: true, message: blocked ? `${target.username} bloqueado` : `★ quitada a ${target.username}` });
+});
+
+// Rechazar denuncia (sin sanción)
+app.post('/api/reports/:id/reject', authMiddleware, modMiddleware, (req, res) => {
+  const report = query('SELECT * FROM reports WHERE id = ?', [req.params.id])[0];
+  if (!report) return res.status(404).json({ error: 'Denuncia no encontrada' });
+  if (report.status !== 'pendiente') return res.status(400).json({ error: 'Denuncia ya procesada' });
+
+  run(`UPDATE reports SET status='rechazada', resolved_by=?, resolved_at=datetime('now') WHERE id=?`,
+    [req.user.id, report.id]);
+  saveDB();
+  res.json({ success: true, message: 'Denuncia rechazada' });
+});
+
 app.get('/api/reports', authMiddleware, modMiddleware, (req, res) => {
-  const reports = query(`
-    SELECT r.*, reporter.username as reporter_name, target.username as target_name
+  const { status } = req.query;
+  let sql = `
+    SELECT r.*, reporter.username as reporter_name, target.username as target_name,
+           target.stars as target_stars, target.blocked as target_blocked,
+           resolver.username as resolver_name
     FROM reports r 
     JOIN users reporter ON r.reporter_id = reporter.id
     JOIN users target ON r.target_user_id = target.id
-    ORDER BY r.created_at DESC
-  `);
-  res.json(reports);
+    LEFT JOIN users resolver ON r.resolved_by = resolver.id
+    WHERE 1=1
+  `;
+  const params = [];
+  if (status) { sql += ' AND r.status = ?'; params.push(status); }
+  sql += ' ORDER BY r.created_at DESC';
+  res.json(query(sql, params));
 });
 
 // ═══════════════════════════════════════════════
-// ADMIN PANEL API (solo master)
+// ADMIN PANEL API
 // ═══════════════════════════════════════════════
-app.get('/api/admin/stats', authMiddleware, modMiddleware, (req, res) => {
+
+// Middleware: viewer+ (acceso a stats sin poder moderar)
+function viewerMiddleware(req, res, next) {
+  const user = query('SELECT * FROM users WHERE id = ?', [req.user.id])[0];
+  if (!user || !['master','mod','admin','viewer'].includes(user.role))
+    return res.status(403).json({ error: 'Sin permisos' });
+  next();
+}
+
+app.get('/api/admin/stats', authMiddleware, viewerMiddleware, (req, res) => {
   const users = db.exec('SELECT COUNT(*) as c FROM users')[0].values[0][0];
   const topics = db.exec('SELECT COUNT(*) as c FROM topics')[0].values[0][0];
   const comments = db.exec('SELECT COUNT(*) as c FROM comments')[0].values[0][0];
   const blocked = db.exec('SELECT COUNT(*) as c FROM users WHERE blocked=1')[0].values[0][0];
   const reports = db.exec('SELECT COUNT(*) as c FROM reports')[0].values[0][0];
-  res.json({ users, topics, comments, blocked, reports });
+  const pending = db.exec("SELECT COUNT(*) as c FROM reports WHERE status='pendiente'")[0].values[0][0];
+  const votes = db.exec('SELECT COUNT(*) as c FROM votes')[0].values[0][0];
+  res.json({ users, topics, comments, blocked, reports, pending, votes });
+});
+
+// Dashboard completo — solo lectura, viewer+
+app.get('/api/dashboard', authMiddleware, viewerMiddleware, (req, res) => {
+  // Stats generales
+  const users    = db.exec('SELECT COUNT(*) as c FROM users')[0].values[0][0];
+  const topics   = db.exec('SELECT COUNT(*) as c FROM topics')[0].values[0][0];
+  const comments = db.exec('SELECT COUNT(*) as c FROM comments')[0].values[0][0];
+  const votes    = db.exec('SELECT COUNT(*) as c FROM votes')[0].values[0][0];
+  const blocked  = db.exec('SELECT COUNT(*) as c FROM users WHERE blocked=1')[0].values[0][0];
+  const pending  = db.exec("SELECT COUNT(*) as c FROM reports WHERE status='pendiente'")[0].values[0][0];
+
+  // Nuevos usuarios últimos 7 días
+  const newUsers7d = db.exec("SELECT COUNT(*) as c FROM users WHERE created_at >= datetime('now','-7 days')"
+    )[0].values[0][0];
+
+  // Top 5 temas por actividad
+  const topTopics = query(`
+    SELECT t.id, t.title, t.category, t.votes, t.last_activity_at,
+           COUNT(DISTINCT c.id) as comment_count,
+           u.username as author_name
+    FROM topics t
+    JOIN users u ON t.author_id = u.id
+    LEFT JOIN comments c ON c.topic_id = t.id
+    GROUP BY t.id
+    ORDER BY (t.votes * 3 + COUNT(DISTINCT c.id) * 2) DESC
+    LIMIT 5
+  `);
+
+  // Actividad por categoría
+  const byCat = query(`
+    SELECT t.category,
+           COUNT(DISTINCT t.id) as topic_count,
+           COUNT(DISTINCT c.id) as comment_count,
+           SUM(t.votes) as total_votes
+    FROM topics t
+    LEFT JOIN comments c ON c.topic_id = t.id
+    GROUP BY t.category
+    ORDER BY comment_count DESC
+  `);
+
+  // Usuarios más activos (por posts)
+  const topUsers = query(`
+    SELECT username, role, posts_count, stars, blocked, created_at
+    FROM users
+    ORDER BY posts_count DESC
+    LIMIT 8
+  `);
+
+  // Últimas 10 interacciones (comentarios recientes)
+  const recentActivity = query(`
+    SELECT c.created_at, c.body,
+           u.username as author_name, u.role as author_role,
+           t.title as topic_title, t.id as topic_id
+    FROM comments c
+    JOIN users u ON c.author_id = u.id
+    JOIN topics t ON c.topic_id = t.id
+    ORDER BY c.created_at DESC
+    LIMIT 10
+  `);
+
+  // Temas creados por día (últimos 14 días)
+  const topicsPerDay = query(`
+    SELECT DATE(created_at) as day, COUNT(*) as count
+    FROM topics
+    WHERE created_at >= datetime('now', '-14 days')
+    GROUP BY DATE(created_at)
+    ORDER BY day ASC
+  `);
+
+  res.json({
+    stats: { users, topics, comments, votes, blocked, pending, newUsers7d },
+    topTopics,
+    byCat,
+    topUsers,
+    recentActivity,
+    topicsPerDay
+  });
+});
+
+// Asignar rol viewer (solo master)
+app.post('/api/users/set-viewer', authMiddleware, (req, res) => {
+  const me = query('SELECT * FROM users WHERE id = ?', [req.user.id])[0];
+  if (!me || me.role !== 'master') return res.status(403).json({ error: 'Solo el master puede asignar viewers' });
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email requerido' });
+  const target = query('SELECT * FROM users WHERE email = ?', [email.toLowerCase().trim()])[0];
+  if (!target) return res.status(404).json({ error: 'No existe un usuario con ese email' });
+  if (['master','mod'].includes(target.role)) return res.status(400).json({ error: 'El usuario ya tiene un rol superior' });
+  run(`UPDATE users SET role = 'viewer' WHERE id = ?`, [target.id]);
+  saveDB();
+  res.json({ success: true, message: `${target.username} ahora tiene acceso al dashboard` });
 });
 
 // Votes info para el usuario actual
