@@ -143,20 +143,84 @@ function seedData() {
   db.run(`INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'user')`,
     ['BYTERUNNER', 'b@bbs.com', hash]);
 
-  db.run(`INSERT INTO topics (title, body, category, author_id) VALUES (?, ?, ?, 1)`, [
-    '¿La IA va a reemplazar a los programadores?',
-    'Los últimos avances en modelos de lenguaje hacen esta pregunta urgente. GitHub Copilot escribe código funcional. ¿Es el fin de la profesión o solo otra herramienta?',
-    'Tecnologia'
-  ]);
+  // Tema fijado de bienvenida
   db.run(`INSERT INTO topics (title, body, category, author_id, pinned) VALUES (?, ?, ?, 1, 1)`, [
-    'Bienvenidos a SARACATUNGA BBS',
-    'Este es el foro donde los humanos todavía piensan. Leé las normas antes de participar. Respetá a los demás. Debatí con argumentos.',
+    'Bienvenidos a SARACATUNGA BBS — Leé esto primero',
+    'Este es el foro donde los humanos debaten sin algoritmos, sin IA, sin filtros. Opiniones reales de personas reales.\n\nReglas básicas: argumentá, no insultes, citá fuentes cuando puedas. El sistema de estrellas penaliza el mal comportamiento.\n\nBienvenido al debate libre.',
     'General'
   ]);
-  db.run(`INSERT INTO comments (topic_id, author_id, body) VALUES (1, 2, ?)`, [
-    'Ya me reemplazó a mí. Estoy escribiendo esto desde la calle.'
+
+  // 1. Política / Actualidad
+  db.run(`INSERT INTO topics (title, body, category, author_id) VALUES (?, ?, ?, 1)`, [
+    'Milei y el ajuste: ¿está funcionando o nos están mintiendo con los números?',
+    'El gobierno muestra superávit fiscal y baja de inflación. Pero en la calle los precios no bajan y el salario real sigue cayendo. ¿Quién tiene razón: los datos macro o la experiencia cotidiana? ¿Es posible que ambas cosas sean ciertas al mismo tiempo?\n\nDebatamos con datos concretos, no con chicanas.',
+    'Politica'
   ]);
-  console.log('✔ Datos iniciales insertados');
+
+  // 2. Actualidad
+  db.run(`INSERT INTO topics (title, body, category, author_id) VALUES (?, ?, ?, 1)`, [
+    'El dólar blue: ¿por qué el gobierno no puede eliminarlo de una vez?',
+    'Llevamos décadas con brecha cambiaria en Argentina. Cada gobierno promete terminar con el mercado paralelo y ninguno puede. ¿Es un problema político, económico o cultural? ¿La gente seguiría comprando dólares aunque no hubiera cepo?',
+    'General'
+  ]);
+
+  // 3. Autos
+  db.run(`INSERT INTO topics (title, body, category, author_id) VALUES (?, ?, ?, 1)`, [
+    'Autos eléctricos en Argentina: ¿tiene sentido comprar uno hoy?',
+    'Con la infraestructura de carga que tenemos, los cortes de luz, y el precio de importación disparado... ¿es viable tener un auto eléctrico en Argentina en 2024? ¿O es un lujo para pocos que además no tiene sentido práctico fuera de Capital?\n\nTengo ganas de comprar uno pero no sé si me estoy haciendo el boludo.',
+    'General'
+  ]);
+
+  // 4. Autos
+  db.run(`INSERT INTO topics (title, body, category, author_id) VALUES (?, ?, ?, 1)`, [
+    'GNC vs nafta vs eléctrico: cuál conviene en Argentina hoy con estos precios',
+    'Hice los números con mi auto actual y me sale casi lo mismo con GNC que con nafta premium una vez que sumás el costo de la conversión y el mantenimiento. Alguien más hizo este análisis? Qué variables usaron?\n\nPongan sus cuentas acá para comparar.',
+    'General'
+  ]);
+
+  // 5. Emprendedorismo
+  db.run(`INSERT INTO topics (title, body, category, author_id) VALUES (?, ?, ?, 1)`, [
+    'Emprender en Argentina 2024: ¿heroísmo o masoquismo?',
+    'Impuestos altísimos, tipo de cambio impredecible, consumo cayendo, crédito imposible. Y sin embargo hay gente que arranca negocios y le va bien. ¿Qué sectores están funcionando? ¿Cuál es el secreto de los que sobreviven?\n\nComparto mi experiencia: arranqué una pequeña distribuidora hace 8 meses y voy a contar qué aprendí.',
+    'General'
+  ]);
+
+  // 6. Emprendedorismo
+  db.run(`INSERT INTO topics (title, body, category, author_id) VALUES (?, ?, ?, 1)`, [
+    'Factura A vs Monotributo: el dilema que no te enseñan en ningún lado',
+    'Llegué al tope de monotributo y tengo que decidir si paso a responsable inscripto o abro una SRL. Consulté con tres contadores y me dieron tres respuestas distintas. ¿Alguien pasó por esto? ¿Cómo lo resolvieron?\n\nTambién: ¿vale la pena una sociedad con socios para bajar la carga impositiva?',
+    'General'
+  ]);
+
+  // 7. Tecnología
+  db.run(`INSERT INTO topics (title, body, category, author_id) VALUES (?, ?, ?, 1)`, [
+    'Trabajar en IT desde Argentina para el exterior: la realidad después del boom',
+    'En 2021-2022 parecía que cualquiera con conocimientos básicos de programación conseguía trabajo remoto en dólares. Ahora el mercado se enfría, hay layoffs globales y más competencia. ¿Cómo está el mercado realmente hoy? ¿Qué stack conviene aprender?',
+    'Tecnologia'
+  ]);
+
+  // 8. Cultura / Debate
+  db.run(`INSERT INTO topics (title, body, category, author_id) VALUES (?, ?, ?, 1)`, [
+    'La grieta argentina: ¿existe realmente o nos la inventaron para que no nos juntemos?',
+    'Cada vez que hablo con gente "del otro lado" políticamente, en persona, llegamos a más acuerdos que desacuerdos. Pero en redes sociales parece que somos enemigos irreconciliables. ¿La polarización es real o es un producto de los algoritmos y los medios?\n\n¿Cuándo fue la última vez que cambiaste de opinión sobre algo político importante?',
+    'Politica'
+  ]);
+
+  // 9. Actualidad / Economía
+  db.run(`INSERT INTO topics (title, body, category, author_id) VALUES (?, ?, ?, 1)`, [
+    'Alquileres en Argentina: la nueva ley ¿ayudó o empeoró todo?',
+    'Derogaron la ley de alquileres anterior y volvieron a contratos más cortos. Los propietarios dicen que ahora ofrecen más inmuebles. Los inquilinos dicen que los precios se dispararon igual. ¿Quién tiene razón? ¿Cuál es tu experiencia concreta como propietario o inquilino?',
+    'General'
+  ]);
+
+  // 10. Emprendedorismo / Autos
+  db.run(`INSERT INTO topics (title, body, category, author_id) VALUES (?, ?, ?, 1)`, [
+    'Uber, Cabify, inDriver: ¿conviene manejar en 2024 o es trampa?',
+    'Un amigo dice que le salen los números manejando 8 horas por día. Otro dice que cuando sumás nafta, mantenimiento, seguro y el desgaste del auto, estás trabajando gratis. ¿Alguien tiene números reales? ¿En qué ciudad? ¿Con qué auto?\n\nTambién: ¿InDriver es mejor que Uber para el conductor?',
+    'General'
+  ]);
+
+  console.log('✔ 10 temas iniciales insertados');
 }
 
 // ═══════════════════════════════════════════════
