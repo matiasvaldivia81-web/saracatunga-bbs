@@ -1,13 +1,13 @@
 {
   "name": "saracatunga-bbs",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^9.4.3",
+    "sql.js": "^1.12.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "helmet": "^8.1.0",
