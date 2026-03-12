@@ -1,16 +1,10 @@
 {
   "name": "saracatunga-bbs",
   "version": "3.0.0",
-  "description": "SARACATUNGA - Debate Libre de Humanos",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "author": "MV",
-  "license": "ISC",
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^9.4.3",
