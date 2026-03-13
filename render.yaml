@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: saracatunga-bbs
+    env: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PORT
+        value: 3001
+    disk:
+      name: saracatunga-db
+      mountPath: /data
+      sizeGB: 1
