@@ -158,7 +158,7 @@ function initSchema() {
     return cols.some(c => c.name === col);
   }
   if (!hasColumn('topics','last_activity_at')) {
-    db.run("ALTER TABLE topics ADD COLUMN last_activity_at TEXT DEFAULT (datetime('now'))");
+    db.run("ALTER TABLE topics ADD COLUMN last_activity_at TEXT");
     db.run("UPDATE topics SET last_activity_at = created_at");
   }
   if (!hasColumn('reports','status')) db.run("ALTER TABLE reports ADD COLUMN status TEXT DEFAULT 'pendiente'");
